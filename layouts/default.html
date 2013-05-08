@@ -1,0 +1,42 @@
+<!DOCTYPE HTML>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>A Brand New nanoc Site - <%= @item[:title] %></title>
+    <link rel="stylesheet" href="/style.css">
+
+    <!-- you don't need to keep this, but it's cool for stats! -->
+    <meta name="generator" content="nanoc <%= Nanoc::VERSION %>"> 
+  </head>
+
+
+<body>
+  <div class="container">
+
+    <header class="header clearfix">
+
+      <nav class="menu_main">
+        <ul>
+          <li class="active"><a href="#">Main</a></li>
+        </ul>
+      </nav>
+    </header>
+
+
+    <div class="info">
+
+      <article class="article clearfix">
+      
+      <%= yield %>
+
+      </article>
+    </div>
+    
+    <footer class="footer clearfix">
+      <div class="copyright">Keep it simplest</div>
+    </footer>
+
+  </div>
+</body>
+</html>
