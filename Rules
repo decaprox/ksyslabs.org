@@ -21,22 +21,21 @@ route 'sitemap' do
     item.identifier.chop + '.xml'
 end
 
-
-compile '/style/' do
+compile '/css/*' do
   # don’t filter or layout
 end
 
-compile '/skin/' do
-  # don’t filter or layout
+route '/css/*' do
+    item.identifier.chop + '.' + item[:extension]
 end
 
-compile '/reset/' do
-  # don’t filter or layout
+compile '/upload/*' do
 end
 
-compile '/*' do
+
+compile '*' do
     filter :kramdown
-    layout 'default'
+    layout 'wpages'
 end
 
 
@@ -48,19 +47,6 @@ compile '*' do
     layout 'default'
   end
 end
-
-route '/style/' do
-  '/style.css'
-end
-
-route '/skin/' do
-  '/skin.css'
-end
-
-route '/reset/' do
-  '/reset.css'
-end
-
 
 route '*' do
   if item.binary?

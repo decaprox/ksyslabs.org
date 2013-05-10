@@ -22,6 +22,7 @@ Samsung Galaxy Nexus is based on the Texas Instruments OMAP4 CPU which is an ARM
 * Putting untrusted code into containers like Qubes OS
 * Reusing the same L4Linux and Android userland on different phones, reducing update time
 * Using L4 IPC protects against stack smashing attacks against device drivers
+
 A picture of the Galaxy Nexus phone running three instances of linux simultaneously.
 
 2175944.jpg
@@ -38,6 +39,7 @@ The tuna-hacks branch contains the WIP support for the Galaxy Nexus. Here is the
 * OMAP4 GPIO MUX support
 * Melfas 144 Touchscreen Driver
 * L4Android fixes for linux kernel 3.5
+
 To build a demo, use the “astarasikov/run/tuna-l4android35.run”. Refer to the general Genode building guide and do a “make run/tuna-l4android35” to build the system. Make sure to prepare an initial ramdisk image and edit the path to it in the tuna-l4android35.run file.
 
 Alternatively, use a prebuilt demo image [still uploading] and refer to the u-boot section on the details about booting this image.
