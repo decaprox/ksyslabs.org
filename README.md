@@ -38,11 +38,8 @@ Markdown:
 Language hightligting:
 
 ~~~
-~~~
 printf("hello wrld\n");
 ~~~
 {:.language-c}
-~~~
-{:.language-xml}
 
 language bash does not supported
