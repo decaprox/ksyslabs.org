@@ -1,0 +1,324 @@
+--
+title: Porting Genode Framework to B&amp;N Nook HD+
+--
+
+# Rationale #
+
+So, why the Nook HD+? While I have alrealy ported Genode to the Samsung Galaxy Nexus phone for the FOSDEM 2013 demo session, I decided to give another device a try for the following reasons:
+
+* As a tablet, it has much less hardware (at least, no phone) to support in order to be a daily driver
+* Some peripherals and hardware setup varies between it and the Nexus, so it may help exposing new bugs or hardcodery
+* It has the microSD slot connected to OMAP4 mmc0 with standard voltage setup (the VMODE bit). This is extremely useful because it allows to directly use the Genode MMC driver and it is easy to setup a MBR/VFAT filesystem on the microSD. Galaxy Nexus, on the contrary, has no external memory card slot, and to access the internal memory, it is necessary to implement a small change in the MMC driver and implement the EFI GPT partition parser
+* It has a Full HD display, and I have passion for hi-res screens. Besides, hi-res is a way to stress-test memory subsystem and framebuffer performance
+* Because I can
+
+# U-boot #
+
+Booting custom software on a commercial device is usually connected with some obstacles, like breaking the chain of trust. A typical approach (which I have utilized for many devices, including Acer Iconia A500, Samsung Galaxy S2 and Samsung Galaxy Nexus) is porting the u-boot bootloader to be an intermediate chainloader, flashed instead of the linux kernel.
+
+The B&amp;N Nook HD+ does feature the signed kernel-based chain of trust for the internal EMMC memory, but it allows booting unsigned MLO, xloader and u-boot from the external microSD card. That is to say, there already exists the u-boot port, but to make it boot Genode, numerous changes were needed.
+
+First, I've obtained the android cwm recovery image for the sd card from the B&amp;N Nook HD+ forum on xda-developers.com [credits go to the forum members verygreen and fat-tire]. After writing the image to the SD card and fixing partition layout in fdisk, I ended up with a VFAT partition containing the MLO, u-boot.bin and uImage. The MLO is the header file for the omap4 CPU which combines the memory initialization table with the x-loader bootloader. The u-boot.bin is the almost vanilla B&amp;N u-boot which initializes the display and boots the uImage [which in the case of sd booting is also u-boot]. We'll be replacing the uImage with the customized u-boot.
+
+You can obtain the source code for my u-boot from https://github.com/astarasikov/uboot-bn-nook-hd-fastboot and below is the list of problems I've solved:
+
+* Removing the [unneeded for us] emmc and sd boot options.
+* Enabling fastboot. The bootloader listens on usb for the fastboot connection. "fastboot continue" allows to boot the "kernel" and "ramdisk" files from the sd card
+* Fixed display initialization. Turns out, the code in the uImage was broken, and did not reinit the display properly. The reasons were that it lacked one power GPIO (which would cause it to never come up after reset on some hardware revisions, my tablet being one of the unlucky ones), and the typo in one of the frame sync borders (which caused all font symbols to be one pixel tall). The display initialization code was scattered around 4 files, contained hardcoded definitions for another board. The framebuffer initialization was done in the MMC driver (sic!).
+* Fixed booting "ANDROID!" boot images over fastboot with the "booti" command. The code contained many incorrect assumptions about the image layout.
+* Moved the u-boot base in RAM and increased the fastboot buffer to allow downloading huge images (up to 496M). This allows me to boot Genode images with the built-in ramdisk with the root file system while I've not completed the GPT support
+* Enabled the framebuffer console for debugging
+
+# Genode #
+
+I had to do some changes to make Genode run. I'll briefly discuss some notable items.
+
+## Fiasco.OC cross-compiling ##
+
+Recently, Genode crew have updated to the latest revision of the Fiasco.OC microkernel and it seems to contain some hardcoded cross-compiler name for ARM. I was reluctant to either fix it or download the 'proper' compiler (especially knowing that the one from the Genode toolchain does work for omap4).
+
+So, here is what I've done:
+
+* Made a new directory and added it to the PATH variable (append "export PATH=/path/to/that/very/dir/:$PATH" to your .bashrc if you have no slightest idea what I'm talking about)
+* Made symbolic links for the fake "arm-linux" toolchain pointing to genode with "for i in `ls /usr/local/genode-gcc/bin/genode-arm*`;do  ln -s $i ${i//*genode-arm/arm-linux} ;done"
+
+## Increasing nitpicker memory quota. ##
+
+Currently nitpicker [window manager providing virtual framebuffers] is hardcoded for some 1024x768 screens (I believe because no one, even at genode, seriously considers using Genode as a daily driver today), so we need to fix the memory limit constant in the following way:
+
+<pre>
+-- a/os/include/nitpicker_session/connection.h
+++ b/os/include/nitpicker_session/connection.h
+@@ -43,8 +43,8 @@ namespace Nitpicker {
+                                char argbuf[ARGBUF_SIZE];
+                                argbuf[0] = 0;
+
+<label style="color:red">-                               /* by default, donate as much as needed for a 1024x768 RGB565 screen */
+                               Genode::size_t ram_quota = 1600*1024;</label>
+<label style="color:blue">+                               /* by default, donate as much as needed for a Full HD RGB565 screen */
+                               Genode::size_t ram_quota = 1920*1280*2;</label>
+</pre>
+
+## Adding LCD support to omap4 framebuffer ##
+
+Currently, omap4 framebuffer only supports the TV interface for HDMI. To make it reset and configure the LCD interface (which is used in smartphones and tablets), we need to add some register definitions [and fix the incorrect definition of the base address register while we're at it] to the code according to the omap4 DSS subsystem manual.
+
+<pre>
+diff --git a/os/src/drivers/framebuffer/omap4/dispc.h b/os/src/drivers/framebuffer/omap4/dispc.h
+index 23f80df..ea9f602 100644
+-- a/os/src/drivers/framebuffer/omap4/dispc.h
+++ b/os/src/drivers/framebuffer/omap4/dispc.h
+@@ -18,8 +18,14 @@ struct Dispc : Genode::Mmio
+         */
+        struct Control1 : Register<0x40, 32>
+        {
+<label style="color:blue">               struct Lcd_enable : Bitfield&gt;0, 1&lt; { };</label>
+                struct Tv_enable : Bitfield<1, 1> { };
+ 
+<label style="color:blue">               struct Go_lcd : Bitfield&gt;5, 1&lt;</label>
+<label style="color:blue">               {</label>
+<label style="color:blue">                       enum { HW_UPDATE_DONE    = 0x0,   /* set by HW after updating */</label>
+<label style="color:blue">                              REQUEST_HW_UPDATE = 0x1 }; /* must be set by user */</label>
+<label style="color:blue">               };</label>
+                struct Go_tv : Bitfield<6, 1>
+                {
+                        enum { HW_UPDATE_DONE    = 0x0,   /* set by HW after updating */
+@@ -46,11 +52,17 @@ struct Dispc : Genode::Mmio
+                struct Width  : Bitfield<0, 11>  { };
+                struct Height : Bitfield<16, 11> { };
+        };
+<label style="color:blue">       struct Size_lcd : Register&lt;0x7c, 32&gt;</label>
+<label style="color:blue">       {</label>
+<label style="color:blue">               struct Width  : Bitfield&gt;0, 11&lt;  { };</label>
+<label style="color:blue">               struct Height : Bitfield&gt;16, 11&lt; { };</label>
+<label style="color:blue">       };</label>
+ 
+        /**
+         * Configures base address of the graphics buffer
+         */
+<label style="color:red">       struct Gfx_ba1 : Register&lt;0x80, 32&gt; { };</label>
+<label style="color:blue">       struct Gfx_ba0 : Register&lt;0x80, 32&gt; { };</label>
+<label style="color:blue">       struct Gfx_ba1 : Register&lt;0x84, 32&gt; { };</label>
+ 
+        /**
+         * Configures the size of the graphics window
+diff --git a/os/src/drivers/framebuffer/omap4/driver.h b/os/src/drivers/framebuffer/omap4/driver.h
+index d754a97..53517a3 100644
+<label style="color:red">-- a/os/src/drivers/framebuffer/omap4/driver.h</label>
+<label style="color:blue">++ b/os/src/drivers/framebuffer/omap4/driver.h</label>
+@@ -203,6 +203,7 @@ bool Framebuffer::Driver::init(Framebuffer::Driver::Mode   mode,
+        }
+        _dispc.write&lt;Dispc::Gfx_attributes::Format&gt;(pixel_format);
+<label style="color:red">		_dispc.write&lt;Dispc::Gfx_ba0&gt;(phys_base);</label>
+        _dispc.write&lt;Dispc::Gfx_ba1&gt;(phys_base);
+ 
+        _dispc.write&lt;Dispc::Gfx_size::Sizex&gt;(width(mode) - 1);
+
+</pre>
+
+## Hacking in Nook HD+ display support. ##
+
+I wanted to make the display work in a quick and dirty way, so I've commented out the HDMI init code and replaced with a simple code that reconfigured the framebuffer address for the LCD (we piggyback on the u-boot to initialize the screen). Remember, kids, never ever think of doing this in production. I am deeply ashamed of havind done that. Either way, I'll show you the code, and the framebuffer driver badly wants some changes:
+
+* Adding proper LCD initailization
+* Configurable resolution via the config
+* Support for DSI/DPI interface initialization and custom panel drivers
+* Rotation and HW blitting
+* Ok, enough talk, here's the patch
+
+<pre>
+diff --git a/os/src/drivers/framebuffer/omap4/driver.h b/os/src/drivers/framebuffer/omap4/driver.h
+index 53517a3..9287cdc 100644
+-- a/os/src/drivers/framebuffer/omap4/driver.h
+++ b/os/src/drivers/framebuffer/omap4/driver.h
+@@ -76,6 +76,7 @@ class Framebuffer::Driver
+ 
+                static size_t width(Mode mode)
+                {
+<label style="color:red">+                       return 1920; //XXX: fix config parsing</label>
+                        switch (mode) {
+                        case MODE_1024_768: return 1024;
+                        }
+@@ -84,6 +85,7 @@ class Framebuffer::Driver
+ 
+                static size_t height(Mode mode)
+                {
+<label style="color:blue">                       return 1280;</label>
+                        switch (mode) {
+                        case MODE_1024_768: return 768;
+                        }
+@@ -117,12 +119,17 @@ bool Framebuffer::Driver::init(Framebuffer::Driver::Mode   mode,
+                                Framebuffer::addr_t         phys_base)
+ {
+        /* enable display core clock and set divider to 1 */
+<label style="color:blue">       #if 0</label>
+        _dispc.write&lt;Dispc::Divisor::Lcd&gt;(1);
+        _dispc.write&lt;Dispc::Divisor::Enable&gt;(1);
+<label style="color:blue">       #endif</label>
+<label style="color:blue"></label>
+<label style="color:blue">       _dispc.write&lt;Dispc::Control1::Lcd_enable&gt;(0);</label>
+ 
+        /* set load mode */
+        _dispc.write&lt;Dispc::Config1::Load_mode&gt;(Dispc::Config1::Load_mode::DATA_EVERY_FRAME);
+ 
+<label style="color:blue">       #if 0</label>
+        _hdmi.write&lt;Hdmi::Video_cfg::Start&gt;(0);
+ 
+        if (!_hdmi.issue_pwr_pll_command(Hdmi::Pwr_ctrl::ALL_OFF, _delayer)) {
+@@ -196,6 +203,10 @@ bool Framebuffer::Driver::init(Framebuffer::Driver::Mode   mode,
+        _dispc.write&lt;Dispc::Size_tv::Height&gt;(height(mode) - 1);
+ 
+        _hdmi.write&lt;Hdmi::Video_cfg::Start&gt;(1);
+<label style="color:blue">       #endif</label>
+<label style="color:blue"></label>
+<label style="color:blue">       _dispc.write&lt;Dispc::Size_lcd::Width&gt;(width(mode) - 1);</label>
+<label style="color:blue">       _dispc.write&lt;Dispc::Size_lcd::Height&gt;(height(mode) - 1);</label>
+ 
+        Dispc::Gfx_attributes::access_t pixel_format = 0;
+        switch (format) {
+@@ -212,6 +223,7 @@ bool Framebuffer::Driver::init(Framebuffer::Driver::Mode   mode,
+        _dispc.write&lt;Dispc::Global_buffer&gt;(0x6d2240);
+        _dispc.write&lt;Dispc::Gfx_attributes::Enable&gt;(1);
+ 
+<label style="color:blue">       #if 0</label>
+        _dispc.write&lt;Dispc::Gfx_attributes::Channelout&gt;(Dispc::Gfx_attributes::Channelout::TV);
+        _dispc.write&lt;Dispc::Gfx_attributes::Channelout2&gt;(Dispc::Gfx_attributes::Channelout2::PRIMARY_LCD);
+ 
+@@ -223,6 +235,9 @@ bool Framebuffer::Driver::init(Framebuffer::Driver::Mode   mode,
+                PERR("Go_tv timed out");
+                return false;
+        }
+<label style="color:blue">       #endif</label>
+<label style="color:blue">       _dispc.write&lt;Dispc::Control1::Lcd_enable&gt;(1);</label>
+<label style="color:blue">       _dispc.write&lt;Dispc::Control1::Go_lcd&gt;(1);</label>
+ 
+        return true;
+ }
+</pre>
+
+# Configuration file #
+
+Genode is configured via the XML configuration file. Here are some notes
+We're using the dde_kit usb_drv driver to provide stubs for networking and input drivers
+The nic_bridge proxifies the networking for two l4linux instances
+nitpicker and nit_fb are used to split the display into virtual framebuffers
+both nic_bridge and nit_fb are using the Genode concepts of the service interfaces and service routing. We're configuring the services in such a way that they're using the specific service if needed, and rely on the parent to provide the default service if we dont' care. For example, take a look at how nic_bridge is configured. The usb_drv features the "provides" section that declares which interfaces the service is allowed to provide. These may be used in the "route" section of the client services. By default, Genode features a deny-all policy, so if you don't configure something, you have no access to it.
+usb_drv has some memory leak (or had back in winter and I was lazy to look into it) so I've increased the RAM quota and hoped it would survive. It did.
+
+~~~
+ <start name="usb_drv">
+  <resource name="RAM" quantum="40M"/>
+  <provides>
+   <service name="Input"/>
+   <service name="Nic"/>
+  </provides>
+  <config>
+   <hid/>
+   <nic mac="2e:60:90:0c:4e:01" />
+  </config>
+ </start>
+
+ <start name="nic_bridge">
+  <resource name="RAM" quantum="2M"/>
+  <provides><service name="Nic"/></provides>
+  <route>
+   <service name="Nic"> <child name="usb_drv"/> </service>
+   <any-service> <parent/> <any-child/> </any-service>
+  </route>
+ </start>
+~~~
+
+# Compiling and running #
+
+So, how about trying it out yourself?
+
+Install the Genode toolchain (consult the Genode website and sourceforge project) and create the symlinks as explained above.
+
+## Get the u-boot source code ##
+~~~
+git clone git://github.com/astarasikov/uboot-bn-nook-hd-fastboot.git
+~~~
+
+## Compile U-boot. ##
+I recommend using the codesourcery 2010q1-188 toolchain (because not all toolchains produce working code)
+
+~~~
+export PATH=/path/to/codesourcery/toolchain/bin:$PATH
+export ARCH=arm
+export CROSS_COMPILE=arm-none-eabi-
+U_BOARD=bn_ovation
+make clean
+make distclean
+make ${U_BOARD}_config
+make -j8 
+./tools/mkimage -A arm -O linux -T kernel -C none -a 0x88000000 -e 0x88000000 -n foo -d u-boot.bin uImage
+~~~
+
+## Get the genode framework source code ##
+~~~
+git clone git://github.com/astarasikov/genode.git
+git checkout nook_staging
+~~~
+
+Now, for each directory in the genode tree (base-foc, and non-base directories), go to them and execute "make prepare" to download the required libraries. Well, libports is heavily broken and many packages (openssl, zlib, any more?) fail to download. You can skip libports and qt4 for now.
+
+## Prepare the build directory ##
+~~~
+./tool/create_builddir foc_panda BUILD_DIR=/my/build/dir
+~~~
+
+## Edit the /my/build/dir/etc/build.conf ##
+
+Uncomment the "REPOSITORIES += " entries to allow building l4linux and nitpicker
+
+Add the "MAKE += -j8" to the file to build in parallel utilizing all CPU cores.
+
+Add "SPECS += uboot" to the /my/build/dir/etc/specs.conf to force creating the raw image.bin.gz binary.
+
+## Compile the Genode framework ##
+~~~
+cd /my/build/dir
+make run/nookhdp_l4linux
+~~~
+
+## Actually running the image ##
+
+Now, you may wonder how to run the image. The tablet must be in the fastboot mode. Genode expects itself to be loaded at 0x81000000, and the u-boot does make a stupid assumption that linux kernel must be shifted 0x8000 bytes (i.e., 2 pages) from the base address. It should be fixed eventually, but for now, we're manually substracting the offset from the boot address
+
+~~~
+gunzip var/run/nookhdp_l4linux/image.bin.gz
+fastboot -b 0x80ff8000 boot var/run/nookhdp_l4linux/image.bin
+~~~
+
+# Results #
+Here is a picture of the Genode running. You can see the screen split into four parts with the help of the Nitpicker window manager. Each screen chunk is a virtual framebuffer provided by the Nit_fb service. Genode is running the Launchpad server (top right corner), the LOG written to the framebuffer (bottom left) and two instances of L4Linux.
+
+![Genode on Nook HD+ Photo](http://1.bp.blogspot.com/-dVb27vINvL4/UY3TleeUTtI/AAAAAAAAB00/0PYnc7E4Aw8/s640/DSC01196.JPG)
+
+So, now it does not do much useful work, but remember it was an overnight proof of concept hacked together with the sole purpose of demonstrating the capabilities of Genode Framework, and this tutorial is basically a collection of anti-patterns.
+
+# Future plans #
+
+* Since I want to have a fully-functional port on both the Nook HD+ and Samsung Galaxy Nexus, here are some areas of interest for me and anyone who would like to contribute
+* Upstream OMAP4 and I.MX53 I2C drivers (we at Ksys Labs have written them almost a year ago and they're working fine, but had no time to suggest them to Genode Labs)
+* Upstream GPIOMUX interface for OMAP4
+* Rework and upstream voltage regulator and TWL6030 code
+* Improve OMAP4 Framebuffer Driver
+* EFI GPT Partition table parsing
+* EXT2 file system driver
+* File System to Block interface adapter for Genode (for doing loop mounts)
+* TWL6040 Sound Codec support
+* Virtual SDHCI driver for L4Linux (for prototyping wifi)
+* Ressurect and fix the MUSB OTG driver for DDE_LINUX
+* Nook HD+ Touchscreen support
+* Refactor and upstream Google Nexus touchscreen
+* Multitouch support in Genode and L4Android
+* GPIO Buttons driver
+* Battery drivers
+* Charging driver
+* HSI Serial for OMAP4 (for Nexus modem)
+* PWM and backlight support for OMAP4
+* Sensors (Accelerometer, Gyroscope, Light)
+* UI for observing hardware state and controlling drivers
+* Basic power management
+* Native Genode linux port (without l4linux and Fiasco.OC). Besides dropping the huge messy pile of L4 support code from linux, this will allow to break the dependency on Fiasco.OC and switch to the native port (base-hw)
