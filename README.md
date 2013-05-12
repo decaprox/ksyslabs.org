@@ -3,25 +3,27 @@ ksyslabs.org
 
 This is a new version of ksyslabs.org
 
-1. Install navoc
+1. Install nanoc and dependencies:
+
+	sudo gem install nanoc kramdown builder adsf
 
 2. git clone <..>
 
 3. add new page:
 
-	navoc ci new_page //new page will be create in /content/
+	nanoc ci new_page //new page will be create in /content/
 
 4. Modify content/new_page.html.
 
 5. Compile:
 
-	navoc compile
+	nanoc compile
 
 The output is a set of static files.
 
 6. Run:
 
-	navoc view
+	nanoc view
 
 You will see pages at http://localhost:3000/
 
