@@ -31,3 +31,18 @@ You will see pages at http://localhost:3000/
 
 8. Then submit a pull requests
 
+
+Markdown:
+===========
+
+Language hightligting:
+
+~~~
+~~~
+printf("hello wrld\n");
+~~~
+{:.language-c}
+~~~
+{:.language-xml}
+
+language bash does not supported

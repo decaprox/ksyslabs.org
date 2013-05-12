@@ -47,18 +47,20 @@ By default, the chainloaded version is compiled. It is loaded (by the SBL) to th
 
 If you want to build the SBL replacement version, edit the **include/configs/omap4_tuna.h** file and uncomment the **#define TUNA_SPL_BUILD line**. X-loader loads the bootloader to the address **0xa0208000**.
 
-> export PATH=/home/alexander/handhelds/armv6/codesourcery/bin:$PATH
-> export ARCH=arm
-> export CROSS_COMPILE=arm-none-eabi-
+~~~
+export PATH=/home/alexander/handhelds/armv6/codesourcery/bin:$PATH
+export ARCH=arm
+export CROSS_COMPILE=arm-none-eabi-
 
-> U_BOARD=omap4_tuna
-> make clean
-> make distclean
+U_BOARD=omap4_tuna
+make clean
+make distclean
 
-> make ${U_BOARD}_config
-> make -j8 ${U_BOARD}
-> mkbootimg --kernel u-boot.bin --ramdisk /dev/null -o u-boot.aimg
-
+make ${U_BOARD}_config
+make -j8 ${U_BOARD}
+mkbootimg --kernel u-boot.bin --ramdisk /dev/null -o u-boot.aimg
+~~~
+{:.language-text}
 
 Installation
 ====================
@@ -77,8 +79,11 @@ If you need larger images, I suggest that you use the **tuna-fosdem-hacks** bran
 
 push the files to your device via adb 
 
-> adb push gnex-uboot-chainloaded.img /sdcard/ 
-> adb hell 
+~~~
+adb push gnex-uboot-chainloaded.img /sdcard/ 
+adb hell 
+~~~
+{:.language-text}
 
 now, in the device shell, do the following:
 

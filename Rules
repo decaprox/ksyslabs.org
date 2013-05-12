@@ -21,6 +21,16 @@ route 'sitemap' do
     item.identifier.chop + '.xml'
 end
 
+
+compile 'robots' do
+  filter :erb
+end
+
+route 'robots' do
+    item.identifier.chop + '.txt'
+end
+
+
 compile '/css/*' do
   # don’t filter or layout
 end
@@ -34,8 +44,10 @@ end
 
 
 compile '*' do
-    filter :kramdown
-    layout 'wpages'
+	filter :kramdown,
+		:enable_coderay => true,
+		:coderay_line_numbers => nil
+	layout 'wpages'
 end
 
 
