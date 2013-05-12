@@ -45,3 +45,15 @@ printf("hello wrld\n");
 {:.language-c}
 
 language bash does not supported
+
+## color ##
+Put your data into the &lt;pre&gt; tag. To hightligt a line, use
+~~~
+<label style="color:blue">text</label>
+~~~
+
+To convert *diff* to html, it is convenient to use regex in VIM
+~~~
+76,102s/^-\(.*\)/\<label style="color:red"\>\1\<\/label\>/g
+76,102s/^+\(.*\)/\<label style="color:blue"\>\1\<\/label\>/g
+~~~
