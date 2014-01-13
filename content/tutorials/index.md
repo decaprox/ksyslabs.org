@@ -2,7 +2,7 @@
 title: Tutorials
 ---
 
-Here will be store articles like 'Getting Started'
+Here will be stored articles like 'Getting Started'
 
 [(RU) Porting Genode to CubieBoard](porting_genode_to_cubieboard/)
 

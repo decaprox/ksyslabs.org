@@ -37,6 +37,8 @@ You will see pages at http://localhost:3000/
 Markdown:
 ===========
 
+[Nice examples](http://dillinger.io)
+
 Language hightligting:
 
 ~~~

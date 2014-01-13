@@ -16,3 +16,7 @@ We've ported and customized several software projects to run on top of L4Re.
 * libxml2
 * openssl
 * disko
+
+## Enhancements:
+
+* Buffer overflow protection
